@@ -1,15 +1,15 @@
-#1.IMPORTS
+# 1. IMPORTS
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from generator import generate_es_stream
 
-#2.Page Configuration 
+# 2. Page Configuration
 st.set_page_config(page_title="Radar ES Simulator", layout="wide")
 st.title("🛡️ Radar ES Signal Simulator")
 
-# 3.Aircraft Kinematics Inputs(Sidebar)
+# 3. Aircraft Kinematics Inputs (Sidebar)
 st.sidebar.header("✈️ Aircraft Kinematics")
 
 ac_speed_mach = st.sidebar.number_input(
@@ -20,7 +20,7 @@ ac_speed_mach = st.sidebar.number_input(
 )
 speed_mps = ac_speed_mach * 340.3
 
-# 4.Waypoints (Definition)
+# 4. Waypoints
 num_waypoints = st.sidebar.slider("Number of Waypoints", 1, 32, 3)
 
 default_waypoints = [
@@ -31,7 +31,6 @@ default_waypoints = [
 
 waypoints = []
 
-#4.1 Waypoint Inputs
 with st.sidebar.expander("📍 Define Waypoints", expanded=True):
     for i in range(num_waypoints):
         col_lat, col_lon = st.columns(2)
@@ -49,11 +48,12 @@ with st.sidebar.expander("📍 Define Waypoints", expanded=True):
         )
         waypoints.append((w_lat, w_lon))
 
-# 5.Radar emitter Initialization (Default : 2 Radars) -->
+# 5. Radar Emitter Initialization (Default: 2 Radars)
 if "emitter_configs" not in st.session_state:
     st.session_state.emitter_configs = [
         {
             "id": 0,
+            "pt_w": 10000.0,          # ✅ 10 kW default
             "freq": 3000.0,
             "f_type": "Fixed",
             "f_range": 0.0,
@@ -67,6 +67,7 @@ if "emitter_configs" not in st.session_state:
         },
         {
             "id": 1,
+            "pt_w": 10000.0,          # ✅ 10 kW default
             "freq": 9000.0,
             "f_type": "Fixed",
             "f_range": 0.0,
@@ -80,12 +81,13 @@ if "emitter_configs" not in st.session_state:
         },
     ]
 
-#6.Add Emitter Function 
+# 6. Add Emitter Function
 def add_emitter():
     new_id = max(cfg["id"] for cfg in st.session_state.emitter_configs) + 1
     st.session_state.emitter_configs.append(
         {
             "id": new_id,
+            "pt_w": 10000.0,          # ✅ default 10 kW
             "freq": 4000.0,
             "f_type": "Fixed",
             "f_range": 0.0,
@@ -99,34 +101,45 @@ def add_emitter():
         }
     )
 
-#7.Emitter Management
+# 7. Emitter Management
 st.sidebar.divider()
 st.sidebar.button("➕ Add New Emitter", on_click=add_emitter, width="stretch")
 
-#8.Processed configuration controller
+# 8. Processed Configs
 processed_configs = []
 
-#9.Emitter Configuration UI
+# 9. Emitter Configuration UI
 for i, cfg in enumerate(st.session_state.emitter_configs):
     uid = cfg["id"]
     with st.expander(f"📡 Emitter {i+1} Configuration", expanded=True):
         col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 0.5])
 
-        #9.1 Frequency
+        # 9.1 Frequency + Power
         with col1:
+            pt_w = st.number_input(
+                "Transmit Power (W)",
+                min_value=1.0,
+                max_value=1e7,
+                value=cfg["pt_w"],
+                step=1000.0,
+                key=f"pt_{uid}"
+            )
+
             f_type = st.selectbox(
                 "Frequency Mode",
                 ["Fixed", "Agile", "Pulse-to-Pulse", "Batch-to-Batch"],
                 index=["Fixed", "Agile", "Pulse-to-Pulse", "Batch-to-Batch"].index(cfg["f_type"]),
                 key=f"f_type_{uid}",
             )
+
             f_val = st.number_input(
                 "Base Frequency (MHz)", 1000.0, 18000.0, cfg["freq"], key=f"f_val_{uid}"
             )
+
             f_range = cfg.get("f_range", 0.0)
             f_batch = cfg.get("f_batch", 5)
-        
-        #9.2 PRI
+
+        # 9.2 PRI
         with col2:
             p_type = st.selectbox(
                 "PRI Mode",
@@ -141,7 +154,6 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
                 key=f"pri_{uid}"
             )
 
-            # Additional PRI Controls
             p_batch = cfg.get("p_batch", 5)
             p_jitter_pc = cfg.get("p_jitter_pc", 10.0)
 
@@ -164,7 +176,7 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
                     key=f"p_jitter_{uid}"
                 )
 
-        #9.3 Pulse Width + Scan Type
+        # 9.3 PW + Scan
         with col3:
             pw_val = st.number_input("PW (μs)", 0.1, 1000.0, cfg["pw"], key=f"pw_{uid}")
             scan = st.selectbox(
@@ -173,13 +185,13 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
                 index=["Circular", "Sector", "Constant", "Lock-on", "Conical"].index(cfg["scan"]),
                 key=f"scan_{uid}",
             )
-        
-        #9.4 Radar Position
+
+        # 9.4 Radar Position
         with col4:
             lat = st.number_input("Radar Lat", -90.0, 90.0, cfg["lat"], format="%.4f", key=f"lat_{uid}")
             lon = st.number_input("Radar Lon", -180.0, 180.0, cfg["lon"], format="%.4f", key=f"lon_{uid}")
-        
-        #9.5 Remove Emitter Button
+
+        # 9.5 Remove
         with col5:
             if st.button("🗑️", key=f"rem_{uid}", width="stretch"):
                 if len(st.session_state.emitter_configs) > 1:
@@ -187,8 +199,7 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
                         c for c in st.session_state.emitter_configs if c["id"] != uid
                     ]
                     st.rerun()
-        
-        #9.6 PRI Parsing + Config assembly
+
         try:
             pri_list = [float(x.strip()) for x in p_input.split(",")]
         except ValueError:
@@ -196,14 +207,15 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
 
         processed_configs.append(
             {
+                "pt_w": pt_w,                 # ✅ PASSED TO GENERATOR
                 "freq": f_val,
                 "f_type": f_type,
                 "f_range": f_range,
                 "f_batch": f_batch,
                 "pri_levels": pri_list,
                 "p_type": p_type,
-                "p_batch": p_batch,          # ✅ NEW
-                "p_jitter_pc": p_jitter_pc,  # ✅ NEW
+                "p_batch": p_batch,
+                "p_jitter_pc": p_jitter_pc,
                 "pw": pw_val,
                 "scan": scan,
                 "lat": lat,
@@ -211,8 +223,7 @@ for i, cfg in enumerate(st.session_state.emitter_configs):
             }
         )
 
-
-#10.Run Simulation
+# 10. Run Simulation
 if st.button("🚀 Start Mission Simulation", width="stretch"):
     st.session_state.df = generate_es_stream(
         processed_configs,
@@ -221,7 +232,7 @@ if st.button("🚀 Start Mission Simulation", width="stretch"):
     )
     st.session_state.generated = True
 
-#11.Display Results
+# 11. Display Results
 if "generated" in st.session_state and st.session_state.generated:
     df = st.session_state.df
 
@@ -237,7 +248,6 @@ if "generated" in st.session_state and st.session_state.generated:
         width="stretch",
     )
 
-    # 11.1 Visualization
     st.divider()
     st.subheader("🗺️ Aircraft Path, Radar Locations & Signal Reception Points")
 
@@ -269,26 +279,6 @@ if "generated" in st.session_state and st.session_state.generated:
             color=radar_colors[idx % len(radar_colors)],
             edgecolor="black",
             label=f"Radar {idx} Location",
-        )
-
-    METERS_PER_DEGREE = 111320.0
-    for i in range(len(waypoints) - 1):
-        lat1, lon1 = waypoints[i]
-        lat2, lon2 = waypoints[i + 1]
-
-        dist_m = np.linalg.norm(
-            np.array([lat2 - lat1, lon2 - lon1])
-        ) * METERS_PER_DEGREE
-        dist_km = dist_m / 1000.0
-
-        ax.text(
-            (lon1 + lon2) / 2,
-            (lat1 + lat2) / 2,
-            f"{dist_km:.1f} km",
-            fontsize=9,
-            ha="center",
-            va="center",
-            bbox=dict(facecolor="white", alpha=0.6),
         )
 
     ax.set_xlabel("Longitude")

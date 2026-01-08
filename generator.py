@@ -1,16 +1,16 @@
-#1.IMPORTS
+# 1. IMPORTS
 import numpy as np
 import pandas as pd
 
 def generate_es_stream(configs, waypoints, speed_mps):
-    #2. INITIALIZE VARIABLES
+    # 2. INITIALIZATION
     all_pulses = []
-    METERS_PER_DEGREE = 111320.0 # 1 degree of latitude is approximately 111,320 meters
+    METERS_PER_DEGREE = 111320.0
+    C = 3e8  # Speed of light (m/s)
 
-    #3. COMPUTE TOTAL MISSION TIME FROM WAYPOINTS
-    #Compute Flight Distance (sum of segments between waypoints)
-    #Compute Total Mission Time
-
+    # ---------------------------------------------------
+    # 3. COMPUTE TOTAL MISSION TIME FROM WAYPOINTS
+    # ---------------------------------------------------
     total_path_m = 0.0
     for i in range(len(waypoints) - 1):
         p1 = np.array(waypoints[i], dtype=np.float64)
@@ -20,11 +20,14 @@ def generate_es_stream(configs, waypoints, speed_mps):
     mission_time_sec = total_path_m / speed_mps
     mission_time_us = mission_time_sec * 1e6
 
-    #4. GENERATE PULSES FOR EACH RADAR (For the entire duration of flight)
+    # ---------------------------------------------------
+    # 4. GENERATE PULSES FOR EACH RADAR (MISSION-DRIVEN)
+    # ---------------------------------------------------
     for radar_id, cfg in enumerate(configs):
 
-        #5. Radar Parameters Extraction
+        # 5. RADAR PARAMETERS
         r_lat, r_lon = cfg.get("lat", 0.0), cfg.get("lon", 0.0)
+        pt_w = cfg.get("pt_w", 10000.0)  # Transmit power (W)
 
         base_f = cfg.get("freq", 1000.0)
         f_type = cfg.get("f_type", "Fixed")
@@ -38,23 +41,30 @@ def generate_es_stream(configs, waypoints, speed_mps):
 
         pw_val = cfg.get("pw", 10.0)
 
-        #6.Radar-local clock initialization
+        # Antenna gains (30 dB → linear)
+        Gt = 10 ** (30 / 10)
+        Gr = 10 ** (30 / 10)
+
+        # System loss
+        L = 1.0
+
+        # Radar-local clock
         current_time_us = 0.0
         pulse_index = 0
 
-        #7.Pulse Generation Loop
+        # ---------------------------------------------------
+        # 6. PULSE GENERATION LOOP
+        # ---------------------------------------------------
         while current_time_us <= mission_time_us:
 
-            #8.AIRCRAFT KINEMATICS
+            # 6.1 AIRCRAFT KINEMATICS
             time_sec = current_time_us / 1e6
             dist_moved_m = speed_mps * time_sec
 
-            #8.1 Initial Assumptions
             accum_dist = 0.0
             ac_lat, ac_lon = waypoints[0]
             heading_deg = 0.0
 
-            #8.2 Determine Current Aircraft Position Along Waypoints
             for j in range(len(waypoints) - 1):
                 p1 = np.array(waypoints[j], dtype=np.float64)
                 p2 = np.array(waypoints[j + 1], dtype=np.float64)
@@ -67,7 +77,6 @@ def generate_es_stream(configs, waypoints, speed_mps):
 
                     ac_lat, ac_lon = current_pos[0], current_pos[1]
 
-                    #8.3 Aircraft heading (direction of motion)
                     dlat = p2[0] - p1[0]
                     dlon = p2[1] - p1[1]
                     heading_deg = (np.degrees(np.arctan2(dlon, dlat)) + 360) % 360
@@ -77,14 +86,18 @@ def generate_es_stream(configs, waypoints, speed_mps):
             else:
                 ac_lat, ac_lon = waypoints[-1]
 
-            # 9.4 AIRCRAFT-REFERENCED DOA (0–360 deg)
+            # ---------------------------------------------------
+            # 6.2 AIRCRAFT-REFERENCED DOA (0–360 deg)
+            # ---------------------------------------------------
             d_lat = r_lat - ac_lat
             d_lon = r_lon - ac_lon
 
             bearing_deg = (np.degrees(np.arctan2(d_lon, d_lat)) + 360) % 360
             doa_deg = (bearing_deg - heading_deg + 360) % 360
 
-            # FREQUENCY LOGIC
+            # ---------------------------------------------------
+            # 6.3 FREQUENCY LOGIC
+            # ---------------------------------------------------
             if f_type == "Fixed":
                 freq = base_f
             elif f_type == "Agile":
@@ -98,7 +111,9 @@ def generate_es_stream(configs, waypoints, speed_mps):
             else:
                 freq = base_f
 
-            # PRI LOGIC
+            # ---------------------------------------------------
+            # 6.4 PRI LOGIC
+            # ---------------------------------------------------
             if p_type == "Fixed":
                 pri = p_levels[0]
             elif p_type == "Staggered":
@@ -113,16 +128,30 @@ def generate_es_stream(configs, waypoints, speed_mps):
             else:
                 pri = p_levels[0]
 
-            # AMPLITUDE (placeholder)
-            amp = 1.0
+            # ---------------------------------------------------
+            # 6.5 RANGE & AMPLITUDE (ES RADAR EQUATION)
+            # ---------------------------------------------------
+            delta_lat_m = (r_lat - ac_lat) * METERS_PER_DEGREE
+            delta_lon_m = (r_lon - ac_lon) * METERS_PER_DEGREE
+            R = np.sqrt(delta_lat_m**2 + delta_lon_m**2)
 
-            # PDW
+            freq_hz = freq * 1e6
+            wavelength = C / freq_hz
+
+            # One-way ES amplitude
+            amplitude = (
+                np.sqrt(pt_w * Gt * Gr) * wavelength
+            ) / (4 * np.pi * R * np.sqrt(L))
+
+            # ---------------------------------------------------
+            # 6.6 PDW RECORD
+            # ---------------------------------------------------
             all_pulses.append({
                 "Emitter_ID": f"Radar_{radar_id}",
                 "TOA_us": round(current_time_us, 3),
                 "Freq_MHz": round(freq, 2),
                 "PW_us": round(pw_val, 2),
-                "Amplitude": round(amp, 4),
+                "Amplitude": amplitude,
                 "AC_Lat": round(ac_lat, 8),
                 "AC_Lon": round(ac_lon, 8),
                 "DOA_deg": round(doa_deg, 6),
@@ -131,6 +160,8 @@ def generate_es_stream(configs, waypoints, speed_mps):
             current_time_us += pri
             pulse_index += 1
 
-    # 10. RECEIVER INTERLEAVES ALL PULSES BY TIME
+    # ---------------------------------------------------
+    # 7. RECEIVER INTERLEAVES ALL PULSES BY TIME
+    # ---------------------------------------------------
     df = pd.DataFrame(all_pulses).sort_values(by="TOA_us").reset_index(drop=True)
     return df
