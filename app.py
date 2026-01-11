@@ -20,7 +20,6 @@ def aircraft_kinematics_sidebar():
         max_value=10.0,
         value=2.0
     )
-
     return ac_speed_mach * 340.3
 
 # 4. WAYPOINT INPUTS
@@ -62,40 +61,55 @@ def initialize_emitters():
     if "emitter_configs" not in st.session_state:
         st.session_state.emitter_configs = [
             {
-                # Radar 0: East of first leg
+                # Radar 0
                 "id": 0,
                 "pt_w": 10000.0,          # 10 kW
-                "freq": 3000.0,           # 3 GHz (S-band)
+                "freq": 3000.0,           # 3 GHz(S-band)
                 "f_type": "Fixed",
                 "f_range": 0.0,
                 "f_batch": 5,
 
-                # HIGH PRI → clear time/space separation
                 "pri_levels": "100000",   # 100 ms
                 "p_type": "Fixed",
 
                 "pw": 10.0,
                 "scan": "Constant",
-                "lat": 12.0500,
-                "lon": 77.4500,
+                "lat": 12.1000,
+                "lon": 77.1000,
             },
             {
-                # Radar 1: North of second leg
+                # Radar 1
                 "id": 1,
                 "pt_w": 10000.0,          # 10 kW
-                "freq": 9000.0,           # 9 GHz (X-band)
+                "freq": 9000.0,           # 9 GHz(X-band)
                 "f_type": "Fixed",
                 "f_range": 0.0,
                 "f_batch": 5,
 
-                # Same high PRI
                 "pri_levels": "100000",   # 100 ms
                 "p_type": "Fixed",
 
                 "pw": 8.0,
                 "scan": "Constant",
-                "lat": 12.4500,
-                "lon": 77.3000,
+                "lat": 12.0500,
+                "lon": 77.4500,
+            },
+            {
+                # Radar 2
+                "id": 2,
+                "pt_w": 10000.0,          # 10 kW
+                "freq": 5500.0,           # 5.5 GHz(C-band)
+                "f_type": "Fixed",
+                "f_range": 0.0,
+                "f_batch": 5,
+
+                "pri_levels": "120000",   # 120 ms
+                "p_type": "Fixed",
+
+                "pw": 12.0,
+                "scan": "Constant",
+                "lat": 12.2000,
+                "lon": 77.2000,
             },
         ]
 

@@ -1,20 +1,14 @@
-# =====================================================
 # 1. IMPORTS
-# =====================================================
 import numpy as np
 import pandas as pd
 
 
-# =====================================================
 # 2. CONSTANTS
-# =====================================================
 METERS_PER_DEGREE = 111320.0
 C = 3e8  # Speed of light (m/s)
 
 
-# =====================================================
 # 3. MISSION GEOMETRY
-# =====================================================
 def compute_mission_time(waypoints, speed_mps):
     """Compute total mission time from waypoint path length."""
     total_path_m = 0.0
@@ -28,9 +22,7 @@ def compute_mission_time(waypoints, speed_mps):
     return mission_time_sec * 1e6  # microseconds
 
 
-# =====================================================
 # 4. AIRCRAFT KINEMATICS
-# =====================================================
 def compute_aircraft_state(waypoints, speed_mps, time_us):
     """Return aircraft lat, lon, and heading at given time."""
     time_sec = time_us / 1e6
@@ -63,10 +55,7 @@ def compute_aircraft_state(waypoints, speed_mps, time_us):
 
     return ac_lat, ac_lon, heading_deg
 
-
-# =====================================================
 # 5. DOA COMPUTATION (AIRCRAFT-REFERENCED)
-# =====================================================
 def compute_doa(r_lat, r_lon, ac_lat, ac_lon, heading_deg):
     """Compute aircraft-referenced DOA (0–360°)."""
     d_lat = r_lat - ac_lat
@@ -75,10 +64,7 @@ def compute_doa(r_lat, r_lon, ac_lat, ac_lon, heading_deg):
     bearing_deg = (np.degrees(np.arctan2(d_lon, d_lat)) + 360) % 360
     return (bearing_deg - heading_deg + 360) % 360
 
-
-# =====================================================
 # 6. FREQUENCY LOGIC
-# =====================================================
 def compute_frequency(cfg, pulse_index, radar_id):
     base_f = cfg.get("freq", 1000.0)
     f_type = cfg.get("f_type", "Fixed")
@@ -98,10 +84,7 @@ def compute_frequency(cfg, pulse_index, radar_id):
 
     return base_f
 
-
-# =====================================================
 # 7. PRI LOGIC
-# =====================================================
 def compute_pri(cfg, pulse_index):
     p_levels = cfg.get("pri_levels", [100.0])
     p_type = cfg.get("p_type", "Fixed")
@@ -122,10 +105,7 @@ def compute_pri(cfg, pulse_index):
 
     return p_levels[0]
 
-
-# =====================================================
 # 8. ES AMPLITUDE (ONE-WAY RADAR EQUATION)
-# =====================================================
 def compute_amplitude(cfg, freq_mhz, r_lat, r_lon, ac_lat, ac_lon):
     """
     Computes linear received field-amplitude (∝ electric field strength).
@@ -133,7 +113,7 @@ def compute_amplitude(cfg, freq_mhz, r_lat, r_lon, ac_lat, ac_lon):
     """
     pt_w = cfg.get("pt_w", 10000.0)
 
-    # Antenna gains: 30 dB → linear
+    # Antenna gains: 30 dB : Linear
     Gt = 10 ** (30 / 10)
     Gr = 10 ** (30 / 10)
 
@@ -152,10 +132,7 @@ def compute_amplitude(cfg, freq_mhz, r_lat, r_lon, ac_lat, ac_lon):
     # One-way ES amplitude (field-strength proportional)
     return (np.sqrt(pt_w * Gt * Gr) * wavelength) / (4 * np.pi * R * np.sqrt(L))
 
-
-# =====================================================
 # 9. MAIN GENERATOR
-# =====================================================
 def generate_es_stream(configs, waypoints, speed_mps):
     all_pulses = []
 
@@ -186,12 +163,8 @@ def generate_es_stream(configs, waypoints, speed_mps):
                 cfg, freq, r_lat, r_lon, ac_lat, ac_lon
             )
 
-            # ------------------------------------------------
             # Convert AMPLITUDE → POWER (dBm)
-            # Power ∝ Amplitude²
-            # dBm = 10 log10(P / 1 mW)
             # Simplifies to: 20 log10(A) + 30
-            # ------------------------------------------------
             power_dbm = 20 * np.log10(amplitude) + 30
 
             # PDW record
@@ -200,8 +173,8 @@ def generate_es_stream(configs, waypoints, speed_mps):
                 "TOA_us": round(current_time_us, 3),
                 "Freq_MHz": round(freq, 2),
                 "PW_us": round(pw_val, 2),
-                "Amplitude": amplitude,          # Linear field quantity
-                "Power_dBm": round(power_dbm, 2),# Receiver-reported power
+                "Amplitude": amplitude,          
+                "Power_dBm": round(power_dbm, 2),
                 "AC_Lat": round(ac_lat, 8),
                 "AC_Lon": round(ac_lon, 8),
                 "DOA_deg": round(doa_deg, 6),
